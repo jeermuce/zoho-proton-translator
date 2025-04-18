@@ -1,45 +1,17 @@
-use std::fs;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io;
+mod args;
+use clap::Parser;
+mod csv_lc;
+use args::parsing::{bool_from_int, csv_str_to_vec, parse_secret_data, unwrap_path};
+use args::Args;
+use csv::WriterBuilder;
+use csv_lc::file_managment::{create_file_with_dirs, make_input_reader, make_output_writer};
+use csv_lc::serialize::serialize_vec_to_comma_separated;
 use std::io::Cursor;
-use std::io::Write;
-use std::path::PathBuf;
 use std::process::exit;
 
-use anyhow::{anyhow, Error, Result};
-use clap::Parser;
-use csv::{Reader, Writer, WriterBuilder};
-use serde::{Deserialize, Deserializer, Serialize};
+use anyhow::{Error, Result};
 
-/// Simple program to transform zoho style csv into proton style csv for export-import
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// Path of the zoho csv file
-    #[arg(short = 'i', long = "input_file", value_name = "INPUT_FILE", value_parser = parse_input_path)]
-    input_file: PathBuf,
-
-    /// Write the output file
-    #[arg(short = 'w', long = "write", value_name = "WRITE")]
-    write: bool,
-
-    /// Path of the output file (required if --write is set)
-    #[arg(short = 'o', long = "output_file", value_name = "OUTPUT_FILE", value_parser = parse_output_path, requires = "write")]
-    output_file: Option<PathBuf>,
-}
-
-pub fn parse_input_path(s: &str) -> Result<PathBuf> {
-    let path = PathBuf::from(s);
-    if !path.exists() {
-        return Err(anyhow!("Input file does not exist: {}", s));
-    }
-    Ok(path)
-}
-
-pub fn parse_output_path(s: &str) -> Result<PathBuf> {
-    Ok(PathBuf::from(s))
-}
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Debug)]
 pub struct SecretData {
@@ -99,164 +71,6 @@ pub struct ProtonStyleCsv {
     pub note: Option<String>,
     pub totp: Option<String>,
     pub vault: Option<String>,
-}
-
-fn csv_str_to_vec<'de, D>(de: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(de)?;
-
-    if s.trim().is_empty() {
-        Ok(vec![])
-    } else {
-        Ok(s.split(',').map(str::to_string).collect())
-    }
-}
-
-fn parse_secret_data<'de, D>(de: D) -> Result<SecretData, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(de)?;
-
-    let mut secret_type = String::new();
-    let mut username = String::new();
-    let mut password = String::new();
-
-    for line in s.lines() {
-        let line = line.trim();
-
-        if let Some(rest) = line.strip_prefix("SecretType:") {
-            secret_type = rest.trim().to_string();
-        } else if let Some(rest) = line.strip_prefix("User Name:") {
-            username = rest.trim().to_string();
-        } else if let Some(rest) = line.strip_prefix("Password:") {
-            password = rest.trim().to_string();
-        }
-    }
-
-    Ok(SecretData {
-        secret_type,
-        username,
-        password,
-    })
-}
-
-fn bool_from_int<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let v: u8 = Deserialize::deserialize(deserializer)?;
-
-    match v {
-        0 => Ok(false),
-        1 => Ok(true),
-        _ => Err(serde::de::Error::custom("expected 0 or 1")),
-    }
-}
-
-fn serialize_vec_to_comma_separated<S>(value: &[String], serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let s = value.join(",");
-    serializer.serialize_str(&s)
-}
-
-impl From<ZohoStyleCsv> for ProtonStyleCsv {
-    fn from(z: ZohoStyleCsv) -> Self {
-        let email = if z.secret_data.username.contains('@') {
-            Some(z.secret_data.username.clone())
-        } else {
-            None
-        };
-
-        let note = if z.notes.trim().is_empty() {
-            None
-        } else {
-            Some(z.notes)
-        };
-
-        let vault = if z.folder_name.trim().is_empty() {
-            None
-        } else {
-            Some(z.folder_name)
-        };
-
-        ProtonStyleCsv {
-            name: z.password_name,
-            url: z.password_url,
-            email,
-            username: z.secret_data.username,
-            password: z.secret_data.password,
-            note,
-            totp: z.totp,
-            vault,
-        }
-    }
-}
-
-fn make_input_reader(path: &PathBuf) -> Reader<File> {
-    match csv::ReaderBuilder::new().flexible(true).from_path(path) {
-        Ok(file_reader) => file_reader,
-        Err(e) => {
-            println!("Error creating file reader: {e}\n no further processinng will be performed");
-            exit(1)
-        }
-    }
-}
-
-fn unwrap_path(path: &Option<PathBuf>) -> &PathBuf {
-    match path {
-        Some(p) => p,
-        None => {
-            println!("Output file must be specified if --write is set.\n no further processinng will be performed");
-            exit(1);
-        }
-    }
-}
-
-fn make_output_writer(path: &PathBuf) -> Writer<File> {
-    match csv::Writer::from_path(path) {
-        Ok(w) => w,
-        Err(e) => {
-            eprintln!("Error creating file writer: {e}\n no further processinng will be performed");
-            exit(1);
-        }
-    }
-}
-
-fn create_file_with_dirs(path: &PathBuf) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    if path.exists() {
-        println!(
-            "Warning: the file {:?} already exists, it will be truncated. Do you wish to continue? Y/n ",path
-        );
-        io::stdout().flush()?;
-        let mut response = String::new();
-        io::stdin().read_line(&mut response)?;
-
-        let response = response.trim().to_lowercase();
-
-        if response == "n" {
-            println!("Operation cancelled by user, no further processing will be performed");
-            exit(1);
-        }
-    }
-
-    let mut _file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(path)?;
-
-    println!("File created/truncated successfully.");
-
-    Ok(())
 }
 
 fn dry_run(args: &Args) -> Result<()> {
