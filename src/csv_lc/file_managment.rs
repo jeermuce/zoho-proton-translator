@@ -1,12 +1,13 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Write},
     path::PathBuf,
     process::exit,
 };
 
 use anyhow::Result;
 use csv::{Reader, Writer};
+
+use crate::utils::interactions::confirm_overwrite;
 
 pub fn make_input_reader(path: &PathBuf) -> Reader<File> {
     match csv::ReaderBuilder::new().flexible(true).from_path(path) {
@@ -34,19 +35,7 @@ pub fn create_file_with_dirs(path: &PathBuf) -> Result<()> {
     }
 
     if path.exists() {
-        println!(
-            "Warning: the file {:?} already exists, it will be truncated. Do you wish to continue? Y/n ",path
-        );
-        io::stdout().flush()?;
-        let mut response = String::new();
-        io::stdin().read_line(&mut response)?;
-
-        let response = response.trim().to_lowercase();
-
-        if response == "n" {
-            println!("Operation cancelled by user, no further processing will be performed");
-            exit(1);
-        }
+        confirm_overwrite(path)?;
     }
 
     let mut _file = OpenOptions::new()

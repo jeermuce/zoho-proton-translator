@@ -20,4 +20,5 @@ pub struct Args {
     #[arg(short = 'o', long = "output_file", value_name = "OUTPUT_FILE", value_parser = parse_output_path, requires = "write")]
     pub output_file: Option<PathBuf>,
 }
+
 pub mod parsing;

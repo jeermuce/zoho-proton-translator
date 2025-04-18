@@ -3,7 +3,7 @@ use std::{path::PathBuf, process::exit};
 use anyhow::Result;
 use serde::{Deserialize, Deserializer};
 
-use crate::SecretData;
+use crate::csv_lc::serialize::SecretData;
 
 pub fn parse_input_path(s: &str) -> Result<PathBuf> {
     let path = PathBuf::from(s);
@@ -16,19 +16,6 @@ pub fn parse_input_path(s: &str) -> Result<PathBuf> {
 
 pub fn parse_output_path(s: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(s))
-}
-
-pub fn csv_str_to_vec<'de, D>(de: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(de)?;
-
-    if s.trim().is_empty() {
-        Ok(vec![])
-    } else {
-        Ok(s.split(',').map(str::to_string).collect())
-    }
 }
 
 pub fn parse_secret_data<'de, D>(de: D) -> Result<SecretData, D::Error>
@@ -54,31 +41,8 @@ where
     }
 
     Ok(SecretData {
-        secret_type,
+        _secret_type: secret_type,
         username,
         password,
     })
-}
-
-pub fn bool_from_int<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let v: u8 = Deserialize::deserialize(deserializer)?;
-
-    match v {
-        0 => Ok(false),
-        1 => Ok(true),
-        _ => Err(serde::de::Error::custom("expected 0 or 1")),
-    }
-}
-
-pub fn unwrap_path(path: &Option<PathBuf>) -> &PathBuf {
-    match path {
-        Some(p) => p,
-        None => {
-            println!("Output file must be specified if --write is set.\n no further processinng will be performed");
-            exit(1);
-        }
-    }
 }

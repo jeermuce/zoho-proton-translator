@@ -1,77 +1,19 @@
 mod args;
 use clap::Parser;
 mod csv_lc;
-use args::parsing::{bool_from_int, csv_str_to_vec, parse_secret_data, unwrap_path};
+use args::parsing::parse_secret_data;
+mod utils;
 use args::Args;
 use csv::WriterBuilder;
 use csv_lc::file_managment::{create_file_with_dirs, make_input_reader, make_output_writer};
-use csv_lc::serialize::serialize_vec_to_comma_separated;
+use csv_lc::serialize::{ProtonStyleCsv, ZohoStyleCsv};
+use utils::custom_unwrapping::unwrap_path;
+use utils::type_conversion::{bool_from_int, csv_str_to_vec};
+
 use std::io::Cursor;
 use std::process::exit;
 
 use anyhow::{Error, Result};
-
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Debug)]
-pub struct SecretData {
-    #[serde(rename = "SecretType")]
-    pub secret_type: String,
-    #[serde(rename = "User Name")]
-    pub username: String,
-    #[serde(rename = "Password")]
-    pub password: String,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct ZohoStyleCsv {
-    #[serde(rename = "Password Name")]
-    pub password_name: String,
-
-    #[serde(rename = "Description")]
-    pub description: String,
-
-    #[serde(rename = "Password URL", deserialize_with = "csv_str_to_vec")]
-    pub password_url: Vec<String>,
-
-    #[serde(rename = "SecretData", deserialize_with = "parse_secret_data")]
-    pub secret_data: SecretData,
-
-    #[serde(rename = "Notes")]
-    pub notes: String,
-
-    #[serde(rename = "CustomData")]
-    pub custom_data: String,
-
-    #[serde(rename = "Tags", deserialize_with = "csv_str_to_vec")]
-    pub tags: Vec<String>,
-
-    #[serde(rename = "Classification")]
-    #[serde(skip_deserializing)]
-    pub _classification: Option<String>,
-
-    #[serde(rename = "Favorite", deserialize_with = "bool_from_int")]
-    pub favorite: bool,
-
-    #[serde(rename = "TOTP")]
-    pub totp: Option<String>,
-
-    #[serde(rename = "Folder Name")]
-    pub folder_name: String,
-}
-
-#[derive(Deserialize, Debug, Serialize)]
-pub struct ProtonStyleCsv {
-    pub name: String,
-    #[serde(serialize_with = "serialize_vec_to_comma_separated")]
-    pub url: Vec<String>,
-    pub email: Option<String>,
-    pub username: String,
-    pub password: String,
-    pub note: Option<String>,
-    pub totp: Option<String>,
-    pub vault: Option<String>,
-}
 
 fn dry_run(args: &Args) -> Result<()> {
     let mut reader = make_input_reader(&args.input_file);
